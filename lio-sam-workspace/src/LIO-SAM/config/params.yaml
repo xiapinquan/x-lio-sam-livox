@@ -1,11 +1,10 @@
 lio_sam:
 
   # Topics
-  pointCloudTopic: "points_raw"               # Point cloud data
-  imuTopic: "imu_correct"                         # IMU data
-  # pointCloudTopic: "/velodyne_points"               # Point cloud data
-  # imuTopic: "/rtk_imu"                         # IMU data
-
+  # pointCloudTopic: "points_raw"               # Point cloud data
+  # imuTopic: "imu_correct"                         # IMU data
+  pointCloudTopic: "/velodyne_points"               # Point cloud data
+  imuTopic: "/rtk_imu"                         # IMU data
 
   odomTopic: "odometry/imu"                   # IMU pre-preintegration odometry, same frequency as IMU
   gpsTopic: "odometry/gps"                   # GPS odometry topic from navsat, see module_navsat.launch file
@@ -31,7 +30,7 @@ lio_sam:
   N_SCAN: 32                                  # number of lidar channel (i.e., 16, 32, 64, 128)
   Horizon_SCAN: 1800                          # lidar horizontal resolution (Velodyne:1800, Ouster:512,1024,2048)
   downsampleRate: 1                           # default: 1. Downsample your data if too many points. i.e., 16 = 64 / 4, 16 = 16 / 1
-  lidarMinRange: 1.0                          # default: 1.0, minimum lidar range to be used
+  lidarMinRange: 5.0                          # default: 1.0, minimum lidar range to be used
   lidarMaxRange: 1000.0                       # default: 1000.0, maximum lidar range to be used
 
   # IMU Settings
@@ -43,7 +42,7 @@ lio_sam:
   imuRPYWeight: 0.01
 
   # Extrinsics (lidar -> IMU)
-  extrinsicTrans: [0.0, 0.0, 0.0]
+  extrinsicTrans: [-0.5, -0.5, -1.0]
   # extrinsicRot: [-1, 0, 0,
   #                 0, 1, 0,
   #                 0, 0, -1]
@@ -113,7 +112,7 @@ navsat:
 
 # EKF for Navsat
 ekf_gps:
-  publish_tf: true
+  publish_tf: false
   map_frame: map
   odom_frame: odom
   base_link_frame: base_link
@@ -125,7 +124,7 @@ ekf_gps:
   # -------------------------------------
   # External IMU:
   # -------------------------------------
-  imu0: imu_correct
+  imu0: rtk_imu
   # make sure the input is aligned with ROS REP105. "imu_correct" is manually transformed by myself. EKF can also transform the data using tf between your imu and base_link
   imu0_config: [false, false, false,
                 true,  true,  true,
