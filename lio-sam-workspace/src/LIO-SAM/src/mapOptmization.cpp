@@ -66,6 +66,7 @@ public:
     ros::Publisher pubLaserOdometryIncremental;
     ros::Publisher pubKeyPoses;
     ros::Publisher pubPath;
+    ros::Publisher pubGpsPath;
 
     // 地图可视化相关 Publisher
     ros::Publisher pubHistoryKeyFrames;
@@ -149,6 +150,7 @@ public:
     deque<std_msgs::Float64MultiArray> loopInfoVec;                 // 外部回环信息缓存队列（目前没有使用）
 
     nav_msgs::Path globalPath;
+    nav_msgs::Path gpsPath;
 
     Eigen::Affine3f transPointAssociateToMap;
     Eigen::Affine3f incrementalOdometryAffineFront; // 上一阵优化后的全局位姿估计
@@ -169,6 +171,7 @@ public:
         pubLaserOdometryGlobal      = nh.advertise<nav_msgs::Odometry> ("lio_sam/mapping/odometry", 1);
         pubLaserOdometryIncremental = nh.advertise<nav_msgs::Odometry> ("lio_sam/mapping/odometry_incremental", 1);
         pubPath                     = nh.advertise<nav_msgs::Path>("lio_sam/mapping/path", 1);
+        pubGpsPath                  = nh.advertise<nav_msgs::Path>("ekf_gps/path", 1);
 
         // 订阅特征点云信息、GPS 以及回环信号
         subCloud = nh.subscribe<lio_sam::cloud_info>("lio_sam/feature/cloud_info", 1, &mapOptimization::laserCloudInfoHandler, this, ros::TransportHints().tcpNoDelay());
@@ -287,6 +290,28 @@ public:
 
     void gpsHandler(const nav_msgs::Odometry::ConstPtr& gpsMsg)
     {
+        //pub gps path
+        // publish gps path
+        geometry_msgs::PoseStamped pose_stamped;
+        pose_stamped.header.stamp = ros::Time().fromSec(gpsMsg->header.stamp.toSec());
+        pose_stamped.header.frame_id = mapFrame;
+        pose_stamped.pose.position.x = gpsMsg->pose.pose.position.x;
+        pose_stamped.pose.position.y = gpsMsg->pose.pose.position.y;
+        pose_stamped.pose.position.z = gpsMsg->pose.pose.position.z;
+        tf::Quaternion q;
+        tf::quaternionMsgToTF(gpsMsg->pose.pose.orientation, q);
+        pose_stamped.pose.orientation.x = q.x();
+        pose_stamped.pose.orientation.y = q.y();
+        pose_stamped.pose.orientation.z = q.z();
+        pose_stamped.pose.orientation.w = q.w();
+        gpsPath.poses.push_back(pose_stamped);
+        if (pubGpsPath.getNumSubscribers() != 0)
+        {
+            gpsPath.header.stamp = timeLaserInfoStamp;
+            gpsPath.header.frame_id = mapFrame;
+            pubGpsPath.publish(gpsPath);
+        }
+
         // 将 GPS 信息加入缓存队列中
         gpsQueue.push_back(*gpsMsg);
     }
@@ -857,15 +882,6 @@ public:
         markerArray.markers.push_back(markerEdge);
         pubLoopConstraintEdge.publish(markerArray);
     }
-
-
-
-
-
-
-
-    
-
 
     ///
     ///@brief 利用 imu 测量值 和 imu 里程计信息更新对当前帧位姿的初始值
@@ -1589,7 +1605,15 @@ public:
 
     void addGPSFactor()
     {
-        cout<<"queue.size():"<<gpsQueue.size()<<endl;
+        static int a = 0;
+        if(a++ >= 10){
+            cout << fixed;
+            cout << setprecision(7);
+            cout<<"queue.size():"<<gpsQueue.size()<<endl;
+            cout <<"gps front time: "<<gpsQueue.front().header.stamp.toSec()<<"  , curLaser time: "<<timeLaserInfoCur<<endl;
+            a = 0;
+        }
+        // return ;
         if (gpsQueue.empty())
             return;
 
@@ -1604,9 +1628,10 @@ public:
         }
 
         // pose covariance small, no need to correct -- 如果目前位姿最佳估计在 x, y 方向上协方差较小，不需要引入 gps 进行校正
-        if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold)
+        if (poseCovariance(3,3) < poseCovThreshold && poseCovariance(4,4) < poseCovThreshold){
+            cout<<"poseCovariance x,y:"<< poseCovariance(3,3)<<" , "<<poseCovariance(4,4)<<", It is too smaller,do without add gpsfactor."<<endl;
             return;
-
+        }
         // last gps position
         static PointType lastGPSPoint;
 
@@ -1664,7 +1689,7 @@ public:
                 noiseModel::Diagonal::shared_ptr gps_noise = noiseModel::Diagonal::Variances(Vector3);
                 gtsam::GPSFactor gps_factor(cloudKeyPoses3D->size(), gtsam::Point3(gps_x, gps_y, gps_z), gps_noise);
                 gtSAMgraph.add(gps_factor);
-
+                cout<<"GPS factor: successed insert GPS factor to GTSAM."<<endl;
                 // 将 GPS 和回环一样同样作为全局信息，需要进行多次迭代
                 aLoopIsClosed = true;
                 break;
